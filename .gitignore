@@ -1,0 +1,7 @@
+.vs/
+.vscode/
+compile_commands.json
+docs/
+out/
+
+imgui.ini

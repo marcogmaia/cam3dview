@@ -1,0 +1,44 @@
+{
+  "name": "raylib",
+  "version": "5.5",
+  "description": "A simple and easy-to-use library to enjoy videogames programming",
+  "homepage": "https://github.com/raysan5/raylib",
+  "license": "Zlib",
+  "supports": "!arm32 & !uwp",
+  "dependencies": [
+    "cgltf",
+    "dirent",
+    "drlibs",
+    {
+      "name": "glfw3",
+      "platform": "!(android | emscripten)"
+    },
+    "miniaudio",
+    "mmx",
+    "nanosvg",
+    "qoi",
+    "stb",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ],
+  "default-features": ["use-audio", "use-glfw"],
+  "features": {
+    "use-audio": {
+      "description": "Build raylib with audio module"
+    },
+    "use-glfw": {
+      "description": "Use GLFW as the platform backend",
+      "dependencies": [{ "name": "glfw3", "platform": "!(android | emscripten)" }]
+    },
+    "use-sdl2": {
+      "description": "Use SDL as the platform backend",
+      "dependencies": [{ "name": "sdl2", "platform": "!(android | emscripten)" }]
+    }
+  }
+}

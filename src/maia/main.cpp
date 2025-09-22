@@ -4,58 +4,91 @@
 #include <raymath.h>
 #include <rlgl.h>
 
+#include <Eigen/Geometry>
+
 #include "maia/gui/imgui_extensions.h"
 
 namespace maia {
 
 void DrawCameraMesh(const Camera3D& camera) {
-  // Vector3 forward =
-  //     Vector3Normalize(Vector3Subtract(camera.target, camera.position));
-  // float distance_from_target = 10.0f;
-  // Vector3 offset = Vector3Scale(forward, distance_from_target);
-  // Vector3 sphere_pos = Vector3Add(camera.target, offset);
   DrawSphereWires(camera.position, 1.0f, 16, 16, RED);
 }
 
-void DrawCamera(const Camera3D& /*camera*/) {
-  rlBegin(RL_TRIANGLES);
-  // Front face (Red)
-  rlColor3f(1.0f, 0.0f, 0.0f);     // Set color for the next vertices
-  rlVertex3f(0.0f, 1.0f, 0.0f);    // Top vertex (Apex)
-  rlVertex3f(-1.0f, -1.0f, 1.0f);  // Bottom-left vertex
-  rlVertex3f(1.0f, -1.0f, 1.0f);   // Bottom-right vertex
+Eigen::Vector3f ToEigenVec(const ::Vector3& vec) {
+  return Eigen::Vector3f{vec.x, vec.y, vec.z};
+}
 
-  // Right face (Green)
+void DrawCamera(const Camera3D& camera, float size = 1, float distance = 2) {
+  // 1. Define the Camera's Orientation Vectors.
+  Eigen::Vector3f cam_pos = ToEigenVec(camera.position);
+  Eigen::Vector3f cam_target = ToEigenVec(camera.target);
+  Eigen::Vector3f forward = (cam_target - cam_pos).normalized();
+  Eigen::Vector3f right =
+      Eigen::Vector3f(0.0f, 1.0f, 0.0f).cross(forward).normalized();
+  Eigen::Vector3f up = forward.cross(right).normalized();
+
+  // 2. Construct the Transformation Matrix.
+  Eigen::Affine3f transform = Eigen::Affine3f::Identity();
+  transform.matrix().col(0).head<3>() = right;
+  transform.matrix().col(1).head<3>() = up;
+  transform.matrix().col(2).head<3>() = forward;
+  transform.matrix().col(3).head<3>() = cam_pos;
+
+  // 3. Define the Pyramid's vertices in LOCAL space.
+  // The tip is at the origin (0,0,0) and the base is 'distance' units forward
+  // along the local Z-axis.
+  constexpr float kAspect = 16.0f / 9.0f;
+  const float width = size * kAspect;
+  const float height = size;
+
+  Eigen::Vector3f local_tip(0.0f, 0.0f, 0.0f);
+  Eigen::Vector3f local_base_tl(-width, height, distance);
+  Eigen::Vector3f local_base_tr(width, height, distance);
+  Eigen::Vector3f local_base_bl(-width, -height, distance);
+  Eigen::Vector3f local_base_br(width, -height, distance);
+
+  // 4. Transform local vertices into WORLD space.
+  Eigen::Vector3f world_tip = transform * local_tip;
+  Eigen::Vector3f world_tl = transform * local_base_tl;
+  Eigen::Vector3f world_tr = transform * local_base_tr;
+  Eigen::Vector3f world_bl = transform * local_base_bl;
+  Eigen::Vector3f world_br = transform * local_base_br;
+
+  const auto create_triangle = [](const Eigen::Vector3f& a,
+                                  const Eigen::Vector3f& b,
+                                  const Eigen::Vector3f& c) {
+    rlVertex3f(a.x(), a.y(), a.z());
+    rlVertex3f(b.x(), b.y(), b.z());
+    rlVertex3f(c.x(), c.y(), c.z());
+  };
+
+  rlEnableWireMode();
+  // rlBegin(RL_TRIANGLES);
+  rlBegin(RL_LINES);
+
+  // Front face (Red).
+  rlColor3f(1.0f, 0.0f, 0.0f);
+  create_triangle(world_tip, world_bl, world_tl);
+
+  // Right face (Green).
   rlColor3f(0.0f, 1.0f, 0.0f);
-  rlVertex3f(0.0f, 1.0f, 0.0f);    // Apex
-  rlVertex3f(1.0f, -1.0f, 1.0f);   // Bottom-left vertex
-  rlVertex3f(1.0f, -1.0f, -1.0f);  // Bottom-right vertex
+  create_triangle(world_tip, world_br, world_bl);
 
   // Back face (Blue)
   rlColor3f(0.0f, 0.0f, 1.0f);
-  rlVertex3f(0.0f, 1.0f, 0.0f);     // Apex
-  rlVertex3f(1.0f, -1.0f, -1.0f);   // Bottom-left vertex
-  rlVertex3f(-1.0f, -1.0f, -1.0f);  // Bottom-right vertex
+  create_triangle(world_tip, world_tr, world_br);
 
   // Left face (Yellow)
   rlColor3f(1.0f, 1.0f, 0.0f);
-  rlVertex3f(0.0f, 1.0f, 0.0f);     // Apex
-  rlVertex3f(-1.0f, -1.0f, -1.0f);  // Bottom-left vertex
-  rlVertex3f(-1.0f, -1.0f, 1.0f);   // Bottom-right vertex
+  create_triangle(world_tip, world_tl, world_tr);
 
-  // --- Define the square base using two triangles (Gray) ---
+  // Pyramid base (Gray) - Note the corrected vertex order for two triangles
   rlColor3f(0.5f, 0.5f, 0.5f);
+  create_triangle(world_tl, world_bl, world_br);
+  create_triangle(world_tl, world_br, world_tr);
 
-  // First triangle for the base
-  rlVertex3f(-1.0f, -1.0f, -1.0f);
-  rlVertex3f(1.0f, -1.0f, 1.0f);
-  rlVertex3f(-1.0f, -1.0f, 1.0f);
-
-  // Second triangle for the base
-  rlVertex3f(-1.0f, -1.0f, -1.0f);
-  rlVertex3f(1.0f, -1.0f, -1.0f);
-  rlVertex3f(1.0f, -1.0f, 1.0f);
   rlEnd();
+  rlDisableWireMode();
 }
 
 void MoveCamera(Camera3D& camera) {
@@ -145,18 +178,18 @@ int main() {
         if (ImGui::Begin("win")) {
           gui::ImGuiImageRect(tex.texture,
                               {.x = 0, .y = 0, .width = 800, .height = -600});
-          // auto delta = ImGui::GetMouseDragDelta();
-          // camera.position.x = delta.x;
-          // camera.position.y = -delta.y;
         }
         ImGui::End();
 
         if (ImGui::Begin("win scene")) {
           gui::ImGuiImageRect(tex_scene.texture,
                               {.x = 0, .y = 0, .width = 800, .height = -600});
-          // auto delta = ImGui::GetMouseDragDelta();
-          // camera.position.x = delta.x;
-          // camera.position.y = -delta.y;
+          if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+            auto delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
+            float speed = 0.02f;
+            camera_scene.target.x += delta.x * speed;
+            camera_scene.target.y -= delta.y * speed;
+          }
         }
         ImGui::End();
       }

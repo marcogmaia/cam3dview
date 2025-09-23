@@ -18,23 +18,25 @@ Eigen::Vector3f ToEigenVec(const ::Vector3& vec) {
   return Eigen::Vector3f{vec.x, vec.y, vec.z};
 }
 
-void DrawCamera(const Camera3D& camera, float size = 1, float distance = 2) {
-  // 1. Define the Camera's Orientation Vectors.
-  Eigen::Vector3f cam_pos = ToEigenVec(camera.position);
-  Eigen::Vector3f cam_target = ToEigenVec(camera.target);
-  Eigen::Vector3f forward = (cam_target - cam_pos).normalized();
-  Eigen::Vector3f right =
+void DrawCamera(const Camera3D& camera,
+                float size = 1.f,
+                float distance = 2.f) {
+  // Camera's Orientation Vectors.
+  const Eigen::Vector3f cam_pos = ToEigenVec(camera.position);
+  const Eigen::Vector3f cam_target = ToEigenVec(camera.target);
+  const Eigen::Vector3f forward = (cam_target - cam_pos).normalized();
+  const Eigen::Vector3f right =
       Eigen::Vector3f(0.0f, 1.0f, 0.0f).cross(forward).normalized();
   Eigen::Vector3f up = forward.cross(right).normalized();
 
-  // 2. Construct the Transformation Matrix.
+  // Transformation Matrix.
   Eigen::Affine3f transform = Eigen::Affine3f::Identity();
   transform.matrix().col(0).head<3>() = right;
   transform.matrix().col(1).head<3>() = up;
   transform.matrix().col(2).head<3>() = forward;
   transform.matrix().col(3).head<3>() = cam_pos;
 
-  // 3. Define the Pyramid's vertices in LOCAL space.
+  // Pyramid's vertices in LOCAL space.
   // The tip is at the origin (0,0,0) and the base is 'distance' units forward
   // along the local Z-axis.
   constexpr float kAspect = 16.0f / 9.0f;
@@ -47,7 +49,7 @@ void DrawCamera(const Camera3D& camera, float size = 1, float distance = 2) {
   Eigen::Vector3f local_base_bl(-width, -height, distance);
   Eigen::Vector3f local_base_br(width, -height, distance);
 
-  // 4. Transform local vertices into WORLD space.
+  // Transform local vertices into WORLD space.
   Eigen::Vector3f world_tip = transform * local_tip;
   Eigen::Vector3f world_tl = transform * local_base_tl;
   Eigen::Vector3f world_tr = transform * local_base_tr;
@@ -62,9 +64,7 @@ void DrawCamera(const Camera3D& camera, float size = 1, float distance = 2) {
     rlVertex3f(c.x(), c.y(), c.z());
   };
 
-  rlEnableWireMode();
-  // rlBegin(RL_TRIANGLES);
-  rlBegin(RL_LINES);
+  rlBegin(RL_TRIANGLES);
 
   // Front face (Red).
   rlColor3f(1.0f, 0.0f, 0.0f);
@@ -82,13 +82,12 @@ void DrawCamera(const Camera3D& camera, float size = 1, float distance = 2) {
   rlColor3f(1.0f, 1.0f, 0.0f);
   create_triangle(world_tip, world_tl, world_tr);
 
-  // Pyramid base (Gray) - Note the corrected vertex order for two triangles
+  // Pyramid base (Gray).
   rlColor3f(0.5f, 0.5f, 0.5f);
   create_triangle(world_tl, world_bl, world_br);
   create_triangle(world_tl, world_br, world_tr);
 
   rlEnd();
-  rlDisableWireMode();
 }
 
 void MoveCamera(Camera3D& camera) {
@@ -101,12 +100,68 @@ void MoveCamera(Camera3D& camera) {
   // clang-format on
 }
 
+// Helper to convert Eigen Vector3f to Raylib Vector3
+::Vector3 ToRayVec(const Eigen::Vector3f& vec) {
+  return ::Vector3{.x = vec.x(), .y = vec.y(), .z = vec.z()};
+}
+
+void UpdateBlenderCamera(Camera3D& camera) {
+  constexpr float kRotateSpeed = 0.005f;
+  constexpr float kPanSpeed = 0.02f;
+  constexpr float kZoomSpeed = 2.0f;
+  const Vector2 mouse_delta = GetMouseDelta();
+
+  Eigen::Vector3f camera_pos = ToEigenVec(camera.position);
+  Eigen::Vector3f camera_target = ToEigenVec(camera.target);
+  Eigen::Vector3f world_up(0.0f, 1.0f, 0.0f);
+  bool is_middle_down = IsMouseButtonDown(MOUSE_MIDDLE_BUTTON);
+
+  float wheel_move = GetMouseWheelMove();
+  if (wheel_move != 0) {
+    // Zoom .
+    Eigen::Vector3f view_vec = camera_pos - camera_target;
+    view_vec.normalize();  // Get the direction
+
+    // Move camera along the view vector
+    camera_pos -= view_vec * wheel_move * kZoomSpeed;
+  } else if (is_middle_down && IsKeyDown(KEY_LEFT_SHIFT)) {
+    // Pan (Shift + MMB).
+    Eigen::Vector3f forward = (camera_target - camera_pos).normalized();
+    Eigen::Vector3f right = world_up.cross(forward).normalized();
+    Eigen::Vector3f up = forward.cross(right);
+
+    Eigen::Vector3f pan_vec =
+        (right * mouse_delta.x * kPanSpeed) + (up * mouse_delta.y * kPanSpeed);
+
+    camera_pos += pan_vec;
+    camera_target += pan_vec;
+  } else if (is_middle_down) {
+    // Orbit (MMB).
+    Eigen::Vector3f view_vec = camera_pos - camera_target;
+
+    // Yaw (around world up)
+    Eigen::AngleAxisf yaw_rot(-mouse_delta.x * kRotateSpeed, world_up);
+    view_vec = yaw_rot * view_vec;
+
+    // Pitch (around camera's right axis).
+    Eigen::Vector3f right = world_up.cross(view_vec.normalized()).normalized();
+    Eigen::AngleAxisf pitch_rot(-mouse_delta.y * kRotateSpeed, right);
+    view_vec = pitch_rot * view_vec;
+
+    camera_pos = camera_target + view_vec;
+  }
+
+  camera.position = ToRayVec(camera_pos);
+  camera.target = ToRayVec(camera_target);
+}
+
 }  // namespace maia
 
 int main() {
-  constexpr int kScreenWidth = 1024;
-  constexpr int kScreenHeight = 768;
+  constexpr int kScreenWidth = 1600;
+  constexpr int kScreenHeight = 900;
 
+  // SetConfigFlags(ConfigFlags::FLAG_MSAA_4X_HINT);
   InitWindow(kScreenWidth, kScreenHeight, "Maia - CamCalib");
   SetTargetFPS(120);
 
@@ -136,6 +191,7 @@ int main() {
 
   while (!WindowShouldClose()) {
     maia::MoveCamera(camera);
+    maia::UpdateBlenderCamera(camera_scene);
 
     BeginTextureMode(tex);
     {
@@ -175,21 +231,23 @@ int main() {
       gui::ImGuiBeginFrame();
       {
         ImGui::DockSpaceOverViewport();
+        ImGui::SetNextWindowContentSize({800, 600});
         if (ImGui::Begin("win")) {
           gui::ImGuiImageRect(tex.texture,
                               {.x = 0, .y = 0, .width = 800, .height = -600});
         }
         ImGui::End();
 
+        ImGui::SetNextWindowContentSize({800, 600});
         if (ImGui::Begin("win scene")) {
           gui::ImGuiImageRect(tex_scene.texture,
                               {.x = 0, .y = 0, .width = 800, .height = -600});
-          if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
-            auto delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
-            float speed = 0.02f;
-            camera_scene.target.x += delta.x * speed;
-            camera_scene.target.y -= delta.y * speed;
-          }
+          // if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+          //   auto delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
+          //   float speed = 0.02f;
+          //   camera_scene.target.x += delta.x * speed;
+          //   camera_scene.target.y -= delta.y * speed;
+          // }
         }
         ImGui::End();
       }

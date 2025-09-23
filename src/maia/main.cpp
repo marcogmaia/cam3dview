@@ -109,7 +109,7 @@ void UpdateBlenderCamera(Camera3D& camera) {
   constexpr float kRotateSpeed = 0.005f;
   constexpr float kPanSpeed = 0.02f;
   constexpr float kZoomSpeed = 2.0f;
-  const Vector2 mouse_delta = GetMouseDelta();
+  const ::Vector2 mouse_delta = GetMouseDelta();
 
   Eigen::Vector3f camera_pos = ToEigenVec(camera.position);
   Eigen::Vector3f camera_target = ToEigenVec(camera.target);
@@ -118,11 +118,8 @@ void UpdateBlenderCamera(Camera3D& camera) {
 
   float wheel_move = GetMouseWheelMove();
   if (wheel_move != 0) {
-    // Zoom .
-    Eigen::Vector3f view_vec = camera_pos - camera_target;
-    view_vec.normalize();  // Get the direction
-
-    // Move camera along the view vector
+    // Zoom. Move camera along the view vector.
+    Eigen::Vector3f view_vec = (camera_pos - camera_target).normalized();
     camera_pos -= view_vec * wheel_move * kZoomSpeed;
   } else if (is_middle_down && IsKeyDown(KEY_LEFT_SHIFT)) {
     // Pan (Shift + MMB).
@@ -139,15 +136,17 @@ void UpdateBlenderCamera(Camera3D& camera) {
     // Orbit (MMB).
     Eigen::Vector3f view_vec = camera_pos - camera_target;
 
-    // Yaw (around world up)
-    Eigen::AngleAxisf yaw_rot(-mouse_delta.x * kRotateSpeed, world_up);
-    view_vec = yaw_rot * view_vec;
+    Eigen::Quaternionf yaw_rot(
+        Eigen::AngleAxisf(-mouse_delta.x * kRotateSpeed, world_up));
 
-    // Pitch (around camera's right axis).
     Eigen::Vector3f right = world_up.cross(view_vec.normalized()).normalized();
-    Eigen::AngleAxisf pitch_rot(-mouse_delta.y * kRotateSpeed, right);
-    view_vec = pitch_rot * view_vec;
 
+    Eigen::Quaternionf pitch_rot(
+        Eigen::AngleAxisf(-mouse_delta.y * kRotateSpeed, right));
+
+    Eigen::Quaternionf total_rotation = yaw_rot * pitch_rot;
+
+    view_vec = total_rotation * view_vec;
     camera_pos = camera_target + view_vec;
   }
 
@@ -203,6 +202,7 @@ int main() {
         maia::DrawCamera(camera);
         DrawGrid(10, 1.0f);  // Draw a grid for context
         maia::DrawCameraMesh(camera);
+        maia::DrawCamera(camera_scene);
       }
       EndMode3D();
     }

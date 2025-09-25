@@ -157,6 +157,8 @@ void UpdateBlenderCamera(Camera3D& camera) {
 }  // namespace maia
 
 int main() {
+  namespace gui = maia::gui;
+
   constexpr int kScreenWidth = 1600;
   constexpr int kScreenHeight = 900;
 
@@ -181,10 +183,6 @@ int main() {
   camera_scene.up = Vector3{.x = 0.0f, .y = 1.0f, .z = 0.0f};
   camera_scene.fovy = 60.0f;
   camera_scene.projection = CAMERA_PERSPECTIVE;  // Camera projection type
-
-  // camera.position = Vector3(0, 0, 15);
-
-  namespace gui = maia::gui;
 
   gui::ImGuiInit();
 
